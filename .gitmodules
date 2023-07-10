@@ -1,0 +1,3 @@
+[submodule "waf_rules"]
+	path = waf_rules
+	url = https://github.com/coreruleset/coreruleset.git
