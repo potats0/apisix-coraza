@@ -15,8 +15,10 @@
 -- limitations under the License.
 --
 local core = require("apisix.core")
-local core_log = core.log
+local plugin = require("apisix.plugin")
 local coraza = require "resty.coraza"
+
+local core_log = core.log
 local str_fmt = string.format
 
 
@@ -53,14 +55,18 @@ end
 function _M.init()
     -- call this function when plugin is loaded
     core_log.info("coraza init")
+    local attr = plugin.plugin_attr(plugin_name)
     waf = coraza.create_waf()
-    local script_path = Get_script_path()
-    coraza.rules_add_file(waf, str_fmt("%s../../waf_rules/crs-setup.conf.example", script_path))
-    coraza.rules_add(waf, str_fmt("Include %s../../waf_rules/rules/*.conf", script_path))
+    if attr then
+        local rule_path = attr.rule_path
+        coraza.rules_add_file(waf, str_fmt("%s/crs-setup.conf.example", rule_path))
+        coraza.rules_add(waf, str_fmt("Include /rules/*.conf", rule_path))
+    end
+
 end
 
 function _M.access(conf, ctx)
-    core.log.info("plugin access phase, conf: ", core.json.delay_encode(conf))
+    core.log.info("plugin  phase, conf: ", core.json.delay_encode(conf))
     -- each connection will be created a transaction
     coraza.do_create_transaction(_M.waf)
     coraza.do_access_filter()
@@ -76,26 +82,13 @@ end
 
 function _M.destroy()
     core.log.info("coraza destroy")
-    coraza.free_waf(_M.waf)
+    coraza.free_waf(waf)
 end
 
 
 function _M.log(conf, ctx)
     coraza.do_log()
     coraza.do_free_transaction()
-end
-
-function Get_script_path()
-    local info = debug.getinfo(1, "S") 
-
-    for k,v in pairs(info) do
-            print(k, ":", v)
-    end
-
-    local path = info.source
-    path = string.sub(path, 2, -1) -- 去掉开头的"@"
-    path = string.match(path, "^.*/") -- 捕获最后一个 "/" 之前的部分 就是我们最终要的目录部分
-    return path
 end
 
 return _M
