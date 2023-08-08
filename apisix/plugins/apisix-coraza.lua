@@ -26,23 +26,20 @@ local schema = {
     type = "object",
     properties = {
         mode = {
-            description = "waf running at block mode or monitor mode.",
-            type = "string"
+            type = "string",
+            default = "block",
+            enum = {"block", "monitor"},
+            description = "waf running at block mode or monitor mode."
         },
-        rules = {
-            description = "self waf rules.",
-            type = "array"
-        },
-    },
-    required = {"mode"},
+    }
 }
 
-local plugin_name = "apisix-coraza"
+local plugin_name = "coraza"
 local waf = nil
 
 local _M = {
     version = 0.1,
-    priority = 12,
+    priority = 600,
     name = plugin_name,
     schema = schema,
 }
@@ -54,7 +51,6 @@ end
 
 function _M.init()
     -- call this function when plugin is loaded
-    core_log.info("coraza init")
     local attr = plugin.plugin_attr(plugin_name)
     waf = coraza.create_waf()
     if attr then
@@ -62,22 +58,29 @@ function _M.init()
         coraza.rules_add_file(waf, str_fmt("%s/crs-setup.conf.example", rule_path))
         coraza.rules_add(waf, str_fmt("Include /rules/*.conf", rule_path))
     end
-
 end
 
 function _M.access(conf, ctx)
     core.log.info("plugin  phase, conf: ", core.json.delay_encode(conf))
     -- each connection will be created a transaction
-    coraza.do_create_transaction(_M.waf)
+    coraza.do_create_transaction(waf)
     coraza.do_access_filter()
     return coraza.do_handle()
 end
 
 function _M.header_filter(conf, ctx)
-    core.log.info("plugin access phase, conf: ", core.json.delay_encode(conf))
+    core.log.info("plugin header_filter phase, conf: ", core.json.delay_encode(conf))
     coraza.do_header_filter()
-    ngx.status, _ = coraza.do_handle()
-    core.response.clear_header_as_body_modified()
+    local status_code, _ = coraza.do_handle()
+    if status_code then
+        ngx.status = status_code
+        core.response.clear_header_as_body_modified()
+    end
+end
+
+function _M.body_filter(conf, ctx)
+    core.log.info("plugin body_filter phase, conf: ", core.json.delay_encode(conf))
+    coraza.do_body_filter()
 end
 
 function _M.destroy()
